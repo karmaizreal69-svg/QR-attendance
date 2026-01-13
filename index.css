@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            .pagination {display: inline-block;}
+
+            .pagination a{color:black;
+            float: left;
+        padding: 10px 20px;
+    text-decoration:none;
+border-style:solid;
+border-width: 10px;
+margin-right: 10px;}
+
+.pagination a.active{background-color:aliceblue;
+color:aqua;
+border-radius: 10px}
+
+.pagination a.hover:not(.active){background-color:lightblue;border-radius: 10px;border-style:solid;}
+
+
+

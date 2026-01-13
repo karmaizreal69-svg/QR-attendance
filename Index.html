@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Persistent QR Attendance System</title>
+
+<style>
+body{
+    font-family: Arial;
+    background: url('https://i.pinimg.com/originals/88/15/63/881563d6444b370fa4ceea0c3183bb4c.gif') no-repeat center center fixed;
+    background-size: cover;
+    color: rgb(250, 242, 242);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+section{
+    background: rgba(255,255,255,0.1);
+    padding: 15px;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 600px;
+    margin-bottom: 20px;
+}
+input#gen-name,
+input#gen-section {
+    width: 95%;
+    padding: 10px;
+    margin-top: 10px;
+    background-color: rgba(255, 255, 255, 0.1); 
+    border: 1px solid rgba(255,255,255,0.5);    
+    border-radius: 5px;
+    color: white;                               
+    outline: none;                              
+}
+input#gen-name::placeholder,
+input#gen-section::placeholder {
+    color: rgba(255,255,255,0.7);               
+}
+button{
+    width: 95%;
+    padding: 10px;
+    margin-top: 10px;
+    border-radius: 5px;
+    border: none;
+    background-color: rgba(0, 123, 255, 0.7);
+    color: white;
+    cursor: pointer;
+}
+button:disabled{
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+table{
+    width: 100%;
+    border-collapse: collapse;
+}
+th,td{
+    border:1px solid rgba(255, 255, 255, 0.237);
+    padding:8px;
+}
+.valid{color:#00ff7f;}
+.invalid{color:#ff6b6b;}
+</style>
+</head>
+
+<body>
+
+<h1>QR Attendance System</h1>
+
+<section>
+<h2>QR GENERATOR ATTENDANCE</h2>
+<input id="gen-name" placeholder="Student Name">
+<input id="gen-section" placeholder="Section">
+<button id="generate-btn">Generate QR</button>
+<p id="gen-msg"></p>
+<img id="qr-img" style="display:none;width:200px;margin-top:10px;">
+</section>
+
+<section>
+<h2>Registered Students</h2>
+<ul id="student-list"></ul>
+</section>
+
+<section>
+<h2>QR Scanner</h2>
+<button id="start">Start Camera</button>
+<button id="stop" disabled>Stop Camera</button>
+<div id="scanner"></div>
+<p id="scan-msg">Waiting for scan...</p>
+</section>
+
+<section>
+<h2>🕒 Attendance (Daily Reset Allowed)</h2>
+<button id="reset-attendance">Reset Attendance</button>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Name</th>
+<th>Section</th>
+<th>Time In</th>
+<th>Time Out</th>
+</tr>
+</thead>
+<tbody id="attendance"></tbody>
+</table>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+const genName = document.getElementById("gen-name");
+const genSection = document.getElementById("gen-section");
+const generateBtn = document.getElementById("generate-btn");
+const qrImg = document.getElementById("qr-img");
+const genMsg = document.getElementById("gen-msg");
+const studentList = document.getElementById("student-list");
+const scanMsg = document.getElementById("scan-msg");
+const attendanceBody = document.getElementById("attendance");
+
+let students = JSON.parse(localStorage.getItem("students")) || [];
+let attendance = {};
+let scanLocked = false;
+
+function saveStudents(){
+    localStorage.setItem("students", JSON.stringify(students));
+}
+
+function renderStudents(){
+    studentList.innerHTML = students
+        .map(s => `<li>${s.name} - ${s.section}</li>`)
+        .join("");
+}
+renderStudents();
+
+function studentExists(name, section){
+    return students.some(s => s.name === name && s.section === section);
+}
+
+generateBtn.onclick = () => {
+    const name = genName.value.trim();
+    const section = genSection.value.trim();
+
+    if(!name || !section){
+        genMsg.textContent = "❌ Fill all fields";
+        genMsg.className = "invalid";
+        return;
+    }
+
+    if(studentExists(name, section)){
+        genMsg.textContent = "❌ QR already exists — reuse it";
+        genMsg.className = "invalid";
+        return;
+    }
+
+    const qrText = `Name: ${name}\nSection: ${section}`;
+
+    QRCode.toDataURL(qrText, { width: 200 }, (err, url) => {
+        if(err) return;
+
+        students.push({ name, section });
+        saveStudents();
+        renderStudents();
+
+        qrImg.src = url;
+        qrImg.style.display = "block";
+        genMsg.textContent = "✅ QR saved permanently";
+        genMsg.className = "valid";
+
+        genName.value = "";
+        genSection.value = "";
+    });
+};
+
+function handleScan(text){
+    if(scanLocked) return;
+    scanLocked = true;
+
+    let name="", section="";
+    text.split("\n").forEach(line => {
+        if(line.startsWith("Name:")) name=line.replace("Name:","").trim();
+        if(line.startsWith("Section:")) section=line.replace("Section:","").trim();
+    });
+
+    if(!studentExists(name, section)){
+        scanMsg.textContent="❌ QR NOT REGISTERED";
+        scanMsg.className="invalid";
+        unlock();
+        return;
+    }
+
+    const key = name+section;
+    const time = new Date().toLocaleTimeString();
+
+    if(!attendance[key]){
+        attendance[key] = {name,section,timeIn:time,timeOut:""};
+        scanMsg.textContent = `✅ ${name} TIME IN`;
+    }
+    else if(!attendance[key].timeOut){
+        attendance[key].timeOut = time;
+        scanMsg.textContent = `✅ ${name} TIME OUT`;
+    }
+    else{
+        scanMsg.textContent = "⚠ Attendance already completed";
+    }
+
+    scanMsg.className="valid";
+    updateTable();
+    unlock();
+}
+
+function unlock(){
+    setTimeout(()=>scanLocked=false,3000);
+}
+
+function updateTable(){
+    attendanceBody.innerHTML="";
+    Object.values(attendance).forEach((d,i)=>{
+        attendanceBody.innerHTML+=`
+        <tr>
+        <td>${i+1}</td>
+        <td>${d.name}</td>
+        <td>${d.section}</td>
+        <td>${d.timeIn}</td>
+        <td>${d.timeOut}</td>
+        </tr>`;
+    });
+}
+
+document.getElementById("reset-attendance").onclick = ()=>{
+    attendance = {};
+    attendanceBody.innerHTML="";
+    scanMsg.textContent="Attendance reset — QR still valid";
+};
+
+const qr = new Html5Qrcode("scanner");
+
+start.onclick = async ()=>{
+    await qr.start(
+        {facingMode:"environment"},
+        {fps:10,qrbox:250},
+        handleScan
+    );
+    start.disabled=true;
+    stop.disabled=false;
+};
+
+stop.onclick = async ()=>{
+    await qr.stop();
+    start.disabled=false;
+    stop.disabled=true;
+};
+</script>
+
+</body>
+</html>
